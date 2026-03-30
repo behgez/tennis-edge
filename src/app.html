@@ -11,7 +11,12 @@
 		<title>TennisEdge</title>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<body data-sveltekit-preload-data="hover" style="background:#0f172a;color:#94a3b8;font-family:-apple-system,sans-serif">
 		<div style="display: contents">%sveltekit.body%</div>
+		<script>
+			window.onerror = function(msg, src, line, col, err) {
+				document.body.innerHTML = '<div style="padding:20px;max-width:600px;margin:40px auto"><h2 style="color:#f87171">Error Loading App</h2><p>' + msg + '</p><p style="font-size:12px;color:#64748b">' + (src||'') + ':' + (line||'') + '</p><p style="margin-top:16px"><a href="." style="color:#ccff00">Reload</a></p></div>';
+			};
+		</script>
 	</body>
 </html>
