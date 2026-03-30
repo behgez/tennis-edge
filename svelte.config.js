@@ -13,7 +13,8 @@ const config = {
 			strict: false
 		}),
 		paths: {
-			base: dev ? '' : '/tennis-edge'
+			base: dev ? '' : '/tennis-edge',
+			relative: false
 		},
 		prerender: {
 			handleHttpError: 'warn'
