@@ -10,42 +10,8 @@
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icon-192.png" />
 		<title>TennisEdge</title>
 		%sveltekit.head%
-		<style>
-			body { background: #0f172a; margin: 0; }
-			#te-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #94a3b8; font-family: -apple-system, sans-serif; }
-			#te-loading svg { width: 48px; height: 48px; margin-bottom: 16px; animation: pulse 1.5s ease-in-out infinite; }
-			#te-loading p { font-size: 14px; }
-			@keyframes pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
-		</style>
 	</head>
 	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">
-			<!-- Loading screen (visible until JS loads) -->
-			<div id="te-loading">
-				<svg viewBox="0 0 64 64" fill="none">
-					<circle cx="32" cy="32" r="28" stroke="#ccff00" stroke-width="2" opacity="0.3"/>
-					<circle cx="32" cy="32" r="28" stroke="#ccff00" stroke-width="2" stroke-dasharray="40 140" stroke-linecap="round">
-						<animateTransform attributeName="transform" type="rotate" from="0 32 32" to="360 32 32" dur="1s" repeatCount="indefinite"/>
-					</circle>
-				</svg>
-				<p>Loading TennisEdge...</p>
-			</div>
-			%sveltekit.body%
-		</div>
-		<script>
-			// Remove loading screen once app renders
-			const lo = document.getElementById('te-loading');
-			if (lo) {
-				const obs = new MutationObserver(() => {
-					if (document.querySelector('[data-sveltekit-preload-data] nav, [data-sveltekit-preload-data] main')) {
-						lo.remove();
-						obs.disconnect();
-					}
-				});
-				obs.observe(document.body, { childList: true, subtree: true });
-				// Fallback: remove after 8 seconds regardless
-				setTimeout(() => lo.remove(), 8000);
-			}
-		</script>
+		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
