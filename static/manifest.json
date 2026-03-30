@@ -2,7 +2,7 @@
 	"name": "TennisEdge",
 	"short_name": "TennisEdge",
 	"description": "Your path from KNLTB 7 to 5",
-	"start_url": "/",
+	"start_url": "./",
 	"display": "standalone",
 	"background_color": "#0f172a",
 	"theme_color": "#0f172a",
