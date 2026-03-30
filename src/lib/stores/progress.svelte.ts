@@ -28,7 +28,18 @@ function createProgressStore() {
 		if (!browser) return structuredClone(defaultData);
 		try {
 			const stored = localStorage.getItem(STORAGE_KEY);
-			return stored ? JSON.parse(stored) : structuredClone(defaultData);
+			if (!stored) return structuredClone(defaultData);
+			const parsed = JSON.parse(stored);
+			// Ensure all required properties exist (handles partial/corrupt data)
+			return {
+				completedActivities: parsed.completedActivities ?? {},
+				skillAssessments: parsed.skillAssessments ?? [],
+				streaks: {
+					current: parsed.streaks?.current ?? 0,
+					longest: parsed.streaks?.longest ?? 0,
+					lastDate: parsed.streaks?.lastDate ?? ''
+				}
+			};
 		} catch {
 			return structuredClone(defaultData);
 		}
@@ -89,12 +100,12 @@ function createProgressStore() {
 	}
 
 	function isCompleted(date: string, activityId: string): boolean {
-		return data.completedActivities[date]?.includes(activityId) ?? false;
+		return data?.completedActivities?.[date]?.includes(activityId) ?? false;
 	}
 
 	function getCompletionRate(date: string, totalActivities: number): number {
 		if (totalActivities === 0) return 0;
-		const completed = data.completedActivities[date]?.length ?? 0;
+		const completed = data?.completedActivities?.[date]?.length ?? 0;
 		return Math.round((completed / totalActivities) * 100);
 	}
 
@@ -104,15 +115,15 @@ function createProgressStore() {
 	}
 
 	function getStreakInfo(): StreakInfo {
-		return { ...data.streaks };
+		return { current: data?.streaks?.current ?? 0, longest: data?.streaks?.longest ?? 0, lastDate: data?.streaks?.lastDate ?? '' };
 	}
 
 	function getCompletedForDate(date: string): string[] {
-		return data.completedActivities[date] ?? [];
+		return data?.completedActivities?.[date] ?? [];
 	}
 
 	function getRecentAssessments(count: number = 10): SkillAssessment[] {
-		return data.skillAssessments
+		return (data?.skillAssessments ?? [])
 			.slice()
 			.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 			.slice(0, count);

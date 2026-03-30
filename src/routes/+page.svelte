@@ -100,7 +100,13 @@
 	};
 
 	// --- Get activities for a given JS day number (0-6) ---
+	// Program starts Monday March 31, 2026
+	const PROGRAM_START = new Date(2026, 2, 31); // Month is 0-indexed
+	PROGRAM_START.setHours(0, 0, 0, 0);
+	let programStarted = $derived(now >= PROGRAM_START);
+
 	function getActivitiesForDay(jsDay: number): ScheduleActivity[] {
+		if (!programStarted) return [];
 		const dayEntry = weekSchedule.find(
 			(d) => dayNameToNum[d.day] === jsDay
 		);
@@ -484,6 +490,13 @@
 
 	// --- "Right now" banner logic ---
 	let rightNowMessage = $derived.by(() => {
+		if (!programStarted) {
+			return {
+				title: 'Your program starts tomorrow!',
+				subtitle: 'Monday March 31 — Week 1: Building the Foundation. Get a good night\'s rest and be ready for your morning visualization at 7:00.',
+				type: 'upcoming' as const
+			};
+		}
 		if (!currentItem) {
 			if (hour >= 22) {
 				const tmrwActs = getActivitiesForDay((dayOfWeek + 1) % 7);
