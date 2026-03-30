@@ -27,8 +27,8 @@
 		{
 			id: 1,
 			name: 'Foundation + Competition',
-			startDate: 'Mar 29',
-			endDate: 'May 10',
+			startDate: 'Mar 31',
+			endDate: 'May 12',
 			weekStart: 1,
 			weekEnd: 6,
 			objectives: [
@@ -55,8 +55,8 @@
 		{
 			id: 2,
 			name: 'Development',
-			startDate: 'May 11',
-			endDate: 'Jul 5',
+			startDate: 'May 13',
+			endDate: 'Jul 7',
 			weekStart: 7,
 			weekEnd: 14,
 			objectives: [
@@ -83,8 +83,8 @@
 		{
 			id: 3,
 			name: 'Peak Competition',
-			startDate: 'Jul 6',
-			endDate: 'Sep 13',
+			startDate: 'Jul 8',
+			endDate: 'Sep 15',
 			weekStart: 15,
 			weekEnd: 24,
 			objectives: [
@@ -111,8 +111,8 @@
 		{
 			id: 4,
 			name: 'Off-Season Build',
-			startDate: 'Sep 14',
-			endDate: 'Dec 6',
+			startDate: 'Sep 16',
+			endDate: 'Dec 8',
 			weekStart: 25,
 			weekEnd: 37,
 			objectives: [
@@ -139,8 +139,8 @@
 		{
 			id: 5,
 			name: 'Winter Preparation',
-			startDate: 'Dec 7',
-			endDate: 'Feb 28',
+			startDate: 'Dec 9',
+			endDate: 'Mar 2',
 			weekStart: 38,
 			weekEnd: 48,
 			objectives: [
@@ -167,8 +167,8 @@
 		{
 			id: 6,
 			name: 'Pre-Season',
-			startDate: 'Mar 1',
-			endDate: 'Mar 27',
+			startDate: 'Mar 3',
+			endDate: 'Mar 29',
 			weekStart: 49,
 			weekEnd: 52,
 			objectives: [

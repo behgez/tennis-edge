@@ -22,7 +22,7 @@
 	const dayFullLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 	const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-	const PROGRAM_START = new Date(2026, 2, 23); // March 23, 2026 (Monday of Week 1)
+	const PROGRAM_START = new Date(2026, 2, 31); // March 31, 2026 (Monday of Week 1)
 
 	function getMondayForWeek(weekNum: number): Date {
 		const monday = new Date(PROGRAM_START);

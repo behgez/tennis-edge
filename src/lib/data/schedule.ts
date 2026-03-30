@@ -2,7 +2,7 @@ import type { DaySchedule, GymRotation } from './types';
 
 // ============================================================
 // COMPETITION PHASE SCHEDULE - Week of March 30 - April 5, 2026
-// Spring competition has started (first match was Saturday March 29).
+// Program starts Monday March 31, 2026. Spring competition started Saturday March 29.
 // This is the first full competition week.
 // ============================================================
 
