@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { progressStore } from '$lib/stores/progress.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
@@ -760,7 +761,7 @@
 						{/if}
 						{#if currentItem.activity.type === 'tennis_match' || currentItem.activity.type === 'tennis_training' || currentItem.activity.type === 'competition'}
 							<a
-								href="/journal"
+								href="{base}/journal"
 								class="px-4 py-2 rounded-lg bg-surface-lighter text-text-secondary text-sm font-medium hover:bg-surface-light transition-all"
 							>
 								Open Journal
@@ -1031,7 +1032,7 @@
 													</button>
 												{/if}
 												<a
-													href="/exercises"
+													href="{base}/exercises"
 													class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-lighter text-text-secondary text-xs font-medium hover:bg-surface-light transition-all"
 												>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
@@ -1341,7 +1342,7 @@
 					{/if}
 				</div>
 			</div>
-			<a href="/program" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
+			<a href="{base}/program" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
 				{assessmentDue ? 'bg-warning/15 text-warning hover:bg-warning/25' : 'bg-surface-lighter text-text-secondary hover:bg-surface-light'}">
 				{lastAssessment ? (assessmentDue ? 'Update Now' : 'View') : 'Take Assessment'}
 			</a>

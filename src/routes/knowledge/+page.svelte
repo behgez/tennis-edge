@@ -1,5 +1,6 @@
 <script lang="ts">
 	import YouTubeSearch from "$lib/components/YouTubeSearch.svelte";
+	import { base } from '$app/paths';
 
 	type Category = 'technique' | 'tactics' | 'strategy' | 'analysis';
 
@@ -755,7 +756,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-court-green/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 7}
@@ -808,7 +809,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-court-green/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 8}
@@ -914,7 +915,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-court-green/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 9}
@@ -1023,7 +1024,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-court-green/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 10}
@@ -1105,7 +1106,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-court-green/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-court-green font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 11}
@@ -1208,7 +1209,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-accent-purple/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 12}
@@ -1262,7 +1263,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-accent-purple/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 13}
@@ -1322,7 +1323,7 @@
 							</div>
 
 							<div class="mt-4 glass-card p-3 border-l-2 border-accent-purple/40">
-								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
+								<p class="text-text-secondary text-sm">This is practiced in your daily schedule. <a href="{base}/" class="text-accent-purple font-semibold hover:underline">Check Mission Control</a> for today's focus.</p>
 							</div>
 
 						{:else if article.id === 14}

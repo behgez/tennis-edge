@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	let { path = '/' }: { path: string } = $props();
 
 	interface NavItem {
@@ -8,14 +9,14 @@
 	}
 
 	const navItems: NavItem[] = [
-		{ label: 'Mission Control', href: '/', icon: 'home' },
-		{ label: 'Schedule', href: '/schedule', icon: 'calendar' },
-		{ label: 'Exercises', href: '/exercises', icon: 'dumbbell' },
-		{ label: 'Program', href: '/program', icon: 'trending' },
-		{ label: 'Knowledge', href: '/knowledge', icon: 'book' },
-		{ label: 'Mental', href: '/mental', icon: 'brain' },
-		{ label: 'Journal', href: '/journal', icon: 'edit' },
-		{ label: 'Progress', href: '/progress', icon: 'chart' }
+		{ label: 'Mission Control', href: `${base}/`, icon: 'home' },
+		{ label: 'Schedule', href: `${base}/schedule`, icon: 'calendar' },
+		{ label: 'Exercises', href: `${base}/exercises`, icon: 'dumbbell' },
+		{ label: 'Program', href: `${base}/program`, icon: 'trending' },
+		{ label: 'Knowledge', href: `${base}/knowledge`, icon: 'book' },
+		{ label: 'Mental', href: `${base}/mental`, icon: 'brain' },
+		{ label: 'Journal', href: `${base}/journal`, icon: 'edit' },
+		{ label: 'Progress', href: `${base}/progress`, icon: 'chart' }
 	];
 
 	const mobileMainItems = navItems.slice(0, 4);
