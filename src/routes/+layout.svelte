@@ -1,12 +1,60 @@
 <script>
 	import { page } from '$app/state';
 	import { beforeNavigate, goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import Nav from '$lib/components/Nav.svelte';
 	import { audioManager } from '$lib/stores/audio.svelte';
 	import '../app.css';
 
 	let { children } = $props();
 	let blockedUrl = $state('');
+
+	// === PERSISTENT STORAGE ===
+	// Request persistent storage so the OS won't evict our data
+	// + auto-backup to prevent data loss
+	$effect(() => {
+		if (!browser) return;
+
+		// 1. Request persistent storage (prevents browser from evicting localStorage)
+		if (navigator.storage?.persist) {
+			navigator.storage.persist().then(granted => {
+				if (granted) console.log('[TennisEdge] Persistent storage granted');
+			});
+		}
+
+		// 2. Auto-backup every 24 hours
+		const BACKUP_KEY = 'tennisedge-auto-backup';
+		const BACKUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+		const lastBackup = localStorage.getItem('tennisedge-auto-backup-time');
+		const now = Date.now();
+
+		if (!lastBackup || (now - parseInt(lastBackup)) > BACKUP_INTERVAL) {
+			try {
+				const backup = {
+					progress: JSON.parse(localStorage.getItem('tennisedge-progress') || '{}'),
+					journal: JSON.parse(localStorage.getItem('tennisedge-journal') || '[]'),
+					settings: JSON.parse(localStorage.getItem('tennisedge-settings') || '{}'),
+					date: new Date().toISOString(),
+					version: '1.0'
+				};
+				localStorage.setItem(BACKUP_KEY, JSON.stringify(backup));
+				localStorage.setItem('tennisedge-auto-backup-time', String(now));
+			} catch { /* storage full or unavailable */ }
+		}
+
+		// 3. If main data is missing but backup exists, auto-restore
+		const hasProgress = localStorage.getItem('tennisedge-progress');
+		const hasBackup = localStorage.getItem(BACKUP_KEY);
+		if (!hasProgress && hasBackup) {
+			try {
+				const backup = JSON.parse(hasBackup);
+				if (backup.progress) localStorage.setItem('tennisedge-progress', JSON.stringify(backup.progress));
+				if (backup.journal) localStorage.setItem('tennisedge-journal', JSON.stringify(backup.journal));
+				if (backup.settings) localStorage.setItem('tennisedge-settings', JSON.stringify(backup.settings));
+				console.log('[TennisEdge] Auto-restored from backup:', backup.date);
+			} catch { /* corrupt backup */ }
+		}
+	});
 
 	// Intercept navigation when a session is active
 	beforeNavigate(({ cancel, to }) => {
