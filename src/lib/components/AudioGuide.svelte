@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { audioManager } from '$lib/stores/audio.svelte';
+	import { enableScreenWake, disableScreenWake } from '$lib/utils/screen-wake';
 
 	let {
 		steps,
@@ -25,11 +26,58 @@
 	let keepAliveId: ReturnType<typeof setInterval> | null = null;
 	let hasInteracted = $state(false);
 	let audioGuideVoice: SpeechSynthesisVoice | null = null;
+	let speechWatchdogId: ReturnType<typeof setTimeout> | null = null;
+	let pauseExpectedEnd = 0;
 
 	const speeds = [0.7, 0.8, 0.9, 1, 1.1];
 
 	let progress = $derived(steps.length > 0 ? ((currentStep + 1) / steps.length) * 100 : 0);
 	let currentText = $derived(steps[currentStep] ?? '');
+
+	function handleVisibilityChange(): void {
+		if (!isPlaying) return;
+
+		if (document.hidden) return;
+
+		// --- Page is becoming visible again ---
+
+		const now = Date.now();
+
+		// Case 1: between-step pause that should have ended while hidden
+		if (pauseExpectedEnd > 0 && now >= pauseExpectedEnd) {
+			if (pauseTimeoutId !== null) { clearTimeout(pauseTimeoutId); pauseTimeoutId = null; }
+			pauseExpectedEnd = 0;
+			if (currentStep < steps.length - 1) {
+				currentStep++;
+				restartSpeech();
+			} else {
+				isPlaying = false;
+				isComplete = true;
+			}
+			return;
+		}
+
+		// Case 2: speech was playing but OS killed it silently
+		const browserActuallySpeaking = window.speechSynthesis?.speaking ?? false;
+		if (isSpeaking && !browserActuallySpeaking) {
+			isSpeaking = false;
+			if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+			restartSpeech();
+			return;
+		}
+
+		// Case 3: onerror('interrupted') already set isSpeaking=false, no pause running
+		if (!isSpeaking && pauseExpectedEnd === 0) {
+			restartSpeech();
+		}
+	}
+
+	function restartSpeech(): void {
+		window.speechSynthesis.cancel();
+		setTimeout(() => {
+			if (isPlaying) speak(steps[currentStep]);
+		}, 300);
+	}
 
 	$effect(() => {
 		if (typeof window !== 'undefined') {
@@ -42,12 +90,22 @@
 		return () => cleanup();
 	});
 
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+			return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+		}
+	});
+
 	function cleanup(): void {
 		if (typeof window !== 'undefined' && window.speechSynthesis) {
 			window.speechSynthesis.cancel();
 		}
 		if (pauseTimeoutId !== null) { clearTimeout(pauseTimeoutId); pauseTimeoutId = null; }
 		if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
+		if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+		disableScreenWake();
+		pauseExpectedEnd = 0;
 	}
 
 	function speak(text: string): void {
@@ -55,14 +113,15 @@
 
 		window.speechSynthesis.cancel();
 		if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
+		if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+		pauseExpectedEnd = 0;
 
 		const utterance = new SpeechSynthesisUtterance(text);
 		utterance.rate = speed;
 		utterance.volume = volume;
 		utterance.lang = 'en-US';
 
-		// Pick a good voice
-		// Cache voice on first use
+		// Pick a good voice — cache on first use
 		if (!audioGuideVoice) {
 			const voices = window.speechSynthesis.getVoices();
 			audioGuideVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
@@ -73,9 +132,10 @@
 
 		isSpeaking = true;
 
-		utterance.onend = () => {
+		function onSpeechDone(): void {
 			isSpeaking = false;
 			if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
+			if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 			if (!isPlaying) return;
 
 			const next = new Set(completedSteps);
@@ -83,8 +143,10 @@
 			completedSteps = next;
 
 			if (currentStep < steps.length - 1) {
+				pauseExpectedEnd = Date.now() + pauseBetweenSteps * 1000;
 				pauseTimeoutId = setTimeout(() => {
 					pauseTimeoutId = null;
+					pauseExpectedEnd = 0;
 					if (!isPlaying) return;
 					currentStep++;
 					speak(steps[currentStep]);
@@ -93,14 +155,31 @@
 				isPlaying = false;
 				isComplete = true;
 			}
-		};
+		}
 
-		utterance.onerror = () => {
+		utterance.onend = onSpeechDone;
+		utterance.onerror = (e: any) => {
 			isSpeaking = false;
 			if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
+			if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+			// 'interrupted' on mobile screen lock — visibility handler recovers
+			if (e?.error !== 'interrupted' && isPlaying) {
+				onSpeechDone();
+			}
 		};
 
 		window.speechSynthesis.speak(utterance);
+
+		// Watchdog: if speech doesn't end within expected time, force advance
+		const maxSpeechMs = Math.max(text.length * 200, 5000) + 5000;
+		speechWatchdogId = setTimeout(() => {
+			speechWatchdogId = null;
+			if (isSpeaking && isPlaying) {
+				window.speechSynthesis.cancel();
+				isSpeaking = false;
+				onSpeechDone();
+			}
+		}, maxSpeechMs);
 
 		// Chrome workaround: speech pauses after ~15s. Keep poking it.
 		keepAliveId = setInterval(() => {
@@ -119,6 +198,7 @@
 			isComplete = false;
 		}
 		isPlaying = true;
+		enableScreenWake();
 		audioManager.register({ type: 'audio', title, stop });
 		speak(steps[currentStep]);
 	}
@@ -135,6 +215,9 @@
 
 	function stop(): void {
 		pause();
+		disableScreenWake();
+		if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+		pauseExpectedEnd = 0;
 		currentStep = 0;
 		completedSteps = new Set();
 		isComplete = false;

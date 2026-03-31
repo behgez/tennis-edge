@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { audioManager } from '$lib/stores/audio.svelte';
+	import { enableScreenWake, disableScreenWake } from '$lib/utils/screen-wake';
 
 	let {
 		type = 'daily',
@@ -25,76 +26,95 @@
 	let hasStarted = $state(false);
 	let breathPhase = $state<'inhale' | 'hold' | 'exhale' | 'rest'>('rest');
 	let breathTimer: ReturnType<typeof setTimeout> | null = null;
+	let speechWatchdogId: ReturnType<typeof setTimeout> | null = null;
+	let pauseExpectedEnd = 0;
+	let sessionStartWall = 0;
+	let totalPausedMs = 0;
+	let pauseBeganAt = 0;
 
-	// Each step has text + a specific pause AFTER it (in seconds)
-	// Short pauses for breathing flow, longer for visualization imagery
-	interface VizStep { text: string; pauseAfter: number; breathe?: boolean }
+	// Each step has text + pause configuration
+	// fixed: true → pauseAfter is used as-is (breathing, transitions)
+	// fixed: false/absent → pauseAfter is a relative weight, scaled to fill remaining time
+	// breathe: which phase to show in the breathing circle during this step
+	interface VizStep { text: string; pauseAfter: number; breathe?: 'inhale' | 'hold' | 'exhale'; fixed?: boolean }
 
 	const scripts: Record<string, VizStep[]> = {
 		'pre-match': [
-			{ text: 'Find a quiet space. Close your eyes.', pauseAfter: 4 },
-			{ text: 'Take a deep breath in through your nose.', pauseAfter: 5, breathe: true },
-			{ text: 'Hold.', pauseAfter: 3 },
-			{ text: 'And slowly breathe out through your mouth.', pauseAfter: 5 },
-			{ text: 'Again. Breathe in deeply.', pauseAfter: 5, breathe: true },
-			{ text: 'Hold.', pauseAfter: 3 },
-			{ text: 'And let it go.', pauseAfter: 6 },
-			{ text: 'Now picture the tennis court. See the clay surface. The white lines. The net.', pauseAfter: 8 },
-			{ text: 'Feel the racquet in your hand. Notice its weight. The grip texture under your fingers.', pauseAfter: 6 },
-			{ text: 'Imagine your warm-up. Your body is moving. Loose. Ready. Light on your feet.', pauseAfter: 6 },
-			{ text: 'See yourself hitting your forehand. The unit turn. The ball connects perfectly with the sweet spot. Deep to the corner.', pauseAfter: 7 },
-			{ text: 'Now your backhand. Feel the coil. The drop. You drive through the ball with confidence.', pauseAfter: 7 },
-			{ text: 'Visualize your serve. The toss goes up perfectly. You swing through with full commitment. It lands exactly where you aimed.', pauseAfter: 7 },
-			{ text: 'See yourself approaching the net. A short ball comes. You move forward. Hit deep down the line. Split step. Clean volley. Point won.', pauseAfter: 7 },
-			{ text: 'Now imagine a pressure moment. It is 5 all in the tiebreak. You feel the tension. And that is okay.', pauseAfter: 6 },
-			{ text: 'You turn away from the net. Shoulders back. You breathe. You fix your strings. You plan the next point.', pauseAfter: 6 },
-			{ text: 'You step up to serve. You know exactly where you are going. Full commitment. No hesitation.', pauseAfter: 5 },
-			{ text: 'The serve lands perfectly. You execute your pattern. Point won. Match won.', pauseAfter: 6 },
-			{ text: 'Feel the satisfaction. The confidence. The pride. You earned this.', pauseAfter: 6 },
-			{ text: 'Remember this feeling. This is how you will play today.', pauseAfter: 5 },
-			{ text: 'Take one more deep breath in.', pauseAfter: 5, breathe: true },
-			{ text: 'And let it go.', pauseAfter: 4 },
-			{ text: 'Open your eyes when you are ready.', pauseAfter: 3 },
+			// Opening & breathing — fixed short pauses
+			{ text: 'Find a quiet space. Close your eyes.', pauseAfter: 4, fixed: true },
+			{ text: 'Take a deep breath in through your nose.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'Hold.', pauseAfter: 3, breathe: 'hold', fixed: true },
+			{ text: 'And slowly breathe out through your mouth.', pauseAfter: 5, breathe: 'exhale', fixed: true },
+			{ text: 'Again. Breathe in deeply.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'Hold.', pauseAfter: 3, breathe: 'hold', fixed: true },
+			{ text: 'And let it go.', pauseAfter: 5, breathe: 'exhale', fixed: true },
+			// Visualization — scaled, weighted by imagery complexity
+			{ text: 'Now picture the tennis court. See the clay surface. The white lines. The net.', pauseAfter: 10 },
+			{ text: 'Feel the racquet in your hand. Notice its weight. The grip texture under your fingers.', pauseAfter: 8 },
+			{ text: 'Imagine your warm-up. Your body is moving. Loose. Ready. Light on your feet.', pauseAfter: 8 },
+			{ text: 'See yourself hitting your forehand. The unit turn. The ball connects perfectly with the sweet spot. Deep to the corner.', pauseAfter: 10 },
+			{ text: 'Now your backhand. Feel the coil. The drop. You drive through the ball with confidence.', pauseAfter: 9 },
+			{ text: 'Visualize your serve. The toss goes up perfectly. You swing through with full commitment. It lands exactly where you aimed.', pauseAfter: 10 },
+			{ text: 'See yourself approaching the net. A short ball comes. You move forward. Hit deep down the line. Split step. Clean volley. Point won.', pauseAfter: 12 },
+			{ text: 'Now imagine a pressure moment. It is 5 all in the tiebreak. You feel the tension. And that is okay.', pauseAfter: 9 },
+			{ text: 'You turn away from the net. Shoulders back. You breathe. You fix your strings. You plan the next point.', pauseAfter: 8 },
+			{ text: 'You step up to serve. You know exactly where you are going. Full commitment. No hesitation.', pauseAfter: 7 },
+			{ text: 'The serve lands perfectly. You execute your pattern. Point won. Match won.', pauseAfter: 8 },
+			{ text: 'Feel the satisfaction. The confidence. The pride. You earned this.', pauseAfter: 8 },
+			{ text: 'Remember this feeling. This is how you will play today.', pauseAfter: 6 },
+			// Closing — fixed
+			{ text: 'Take one more deep breath in.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'And let it go.', pauseAfter: 4, breathe: 'exhale', fixed: true },
+			{ text: 'Open your eyes when you are ready.', pauseAfter: 3, fixed: true },
 		],
 		daily: [
-			{ text: 'Sit comfortably. Close your eyes. Let your body relax.', pauseAfter: 5 },
-			{ text: 'Breathe in slowly through your nose.', pauseAfter: 5, breathe: true },
-			{ text: 'Hold.', pauseAfter: 3 },
-			{ text: 'Breathe out slowly through your mouth.', pauseAfter: 5 },
-			{ text: 'Once more. Breathe in.', pauseAfter: 5, breathe: true },
-			{ text: 'Hold.', pauseAfter: 3 },
-			{ text: 'And release.', pauseAfter: 6 },
-			{ text: 'Now picture yourself on the court. You are moving well. Light on your feet. Ready for anything.', pauseAfter: 7 },
-			{ text: 'See your split step. A small hop. You land wide. You push off instantly in the right direction.', pauseAfter: 6 },
-			{ text: 'Imagine your best forehand. Feel the unit turn. The racquet drops. You brush up on the ball. Heavy topspin. It lands deep.', pauseAfter: 7 },
-			{ text: 'Now your one-handed backhand. The coil. The drop. You drive through with your upper back and core. Clean and powerful.', pauseAfter: 7 },
-			{ text: 'A short ball comes. You move forward with purpose. Approach shot deep down the line. Split step at the net. A volley comes. Soft hands. Angled away. Point won.', pauseAfter: 8 },
-			{ text: 'See yourself in a long rally. You are patient. Building the point. Control. Hurt. Finish.', pauseAfter: 7 },
-			{ text: 'Between every point, you follow your routine. Turn away. Breathe. Strings. Plan. Ritual. Every single point.', pauseAfter: 7 },
-			{ text: 'Imagine the final point of a match you win. Feel the joy. The confidence. You played your game.', pauseAfter: 7 },
-			{ text: 'Carry this feeling with you through your day.', pauseAfter: 4 },
-			{ text: 'Take a final deep breath in.', pauseAfter: 5, breathe: true },
-			{ text: 'And let it go. Open your eyes when you are ready.', pauseAfter: 3 },
+			// Opening & breathing — fixed
+			{ text: 'Sit comfortably. Close your eyes. Let your body relax.', pauseAfter: 4, fixed: true },
+			{ text: 'Breathe in slowly through your nose.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'Hold.', pauseAfter: 3, breathe: 'hold', fixed: true },
+			{ text: 'Breathe out slowly through your mouth.', pauseAfter: 5, breathe: 'exhale', fixed: true },
+			{ text: 'Once more. Breathe in.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'Hold.', pauseAfter: 3, breathe: 'hold', fixed: true },
+			{ text: 'And release.', pauseAfter: 5, breathe: 'exhale', fixed: true },
+			// Visualization — scaled by complexity
+			{ text: 'Now picture yourself on the court. You are moving well. Light on your feet. Ready for anything.', pauseAfter: 10 },
+			{ text: 'See your split step. A small hop. You land wide. You push off instantly in the right direction.', pauseAfter: 8 },
+			{ text: 'Imagine your best forehand. Feel the unit turn. The racquet drops. You brush up on the ball. Heavy topspin. It lands deep.', pauseAfter: 10 },
+			{ text: 'Now your one-handed backhand. The coil. The drop. You drive through with your upper back and core. Clean and powerful.', pauseAfter: 10 },
+			{ text: 'A short ball comes. You move forward with purpose. Approach shot deep down the line. Split step at the net. A volley comes. Soft hands. Angled away. Point won.', pauseAfter: 12 },
+			{ text: 'See yourself in a long rally. You are patient. Building the point. Control. Hurt. Finish.', pauseAfter: 9 },
+			{ text: 'Between every point, you follow your routine. Turn away. Breathe. Strings. Plan. Ritual. Every single point.', pauseAfter: 9 },
+			{ text: 'Imagine the final point of a match you win. Feel the joy. The confidence. You played your game.', pauseAfter: 10 },
+			// Closing — fixed
+			{ text: 'Carry this feeling with you through your day.', pauseAfter: 4, fixed: true },
+			{ text: 'Take a final deep breath in.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'And let it go. Open your eyes when you are ready.', pauseAfter: 3, breathe: 'exhale', fixed: true },
 		],
 		'post-error': [
-			{ text: 'Pause. Take one deep breath.', pauseAfter: 5, breathe: true },
-			{ text: 'The last shot is gone. It happened. Accept it completely.', pauseAfter: 4 },
-			{ text: 'Now visualize the correct execution of that shot.', pauseAfter: 3 },
-			{ text: 'See the ball coming toward you. Your feet are set. Your preparation is early.', pauseAfter: 4 },
-			{ text: 'You swing through the ball cleanly. It lands exactly where you want it.', pauseAfter: 4 },
-			{ text: 'Replace the error image with this successful image in your mind.', pauseAfter: 4 },
-			{ text: 'Now refocus. What is your plan for the next point?', pauseAfter: 3 },
-			{ text: 'Step up with confidence. One point at a time.', pauseAfter: 2 },
+			// Short reset — mostly fixed since it's a quick routine
+			{ text: 'Pause. Take one deep breath.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'The last shot is gone. It happened. Accept it completely.', pauseAfter: 4, fixed: true },
+			{ text: 'Now visualize the correct execution of that shot.', pauseAfter: 3, fixed: true },
+			// Visualization — scaled
+			{ text: 'See the ball coming toward you. Your feet are set. Your preparation is early.', pauseAfter: 6 },
+			{ text: 'You swing through the ball cleanly. It lands exactly where you want it.', pauseAfter: 6 },
+			{ text: 'Replace the error image with this successful image in your mind.', pauseAfter: 5 },
+			// Closing — fixed
+			{ text: 'Now refocus. What is your plan for the next point?', pauseAfter: 3, fixed: true },
+			{ text: 'Step up with confidence. One point at a time.', pauseAfter: 2, fixed: true },
 		],
 		pressure: [
-			{ text: 'This is a big moment. And that is okay. Pressure is a privilege.', pauseAfter: 4 },
-			{ text: 'Take a deep breath. Slow everything down.', pauseAfter: 5, breathe: true },
-			{ text: 'Execute your routine. Turn away. Shoulders back. Breathe.', pauseAfter: 4 },
-			{ text: 'Look at your strings. Straighten them. This is your comfort zone.', pauseAfter: 4 },
-			{ text: 'Decide your plan. Where are you serving? What is your next shot?', pauseAfter: 4 },
-			{ text: 'Commit fully. No hesitation. Trust your training.', pauseAfter: 3 },
-			{ text: 'You have practiced this hundreds of times.', pauseAfter: 3 },
-			{ text: 'Step up. Play your game. One point at a time.', pauseAfter: 2 },
+			// Pressure routine — mostly fixed (it's a quick on-court routine)
+			{ text: 'This is a big moment. And that is okay. Pressure is a privilege.', pauseAfter: 4, fixed: true },
+			{ text: 'Take a deep breath. Slow everything down.', pauseAfter: 5, breathe: 'inhale', fixed: true },
+			{ text: 'Execute your routine. Turn away. Shoulders back. Breathe.', pauseAfter: 4, fixed: true },
+			// Brief visualization — scaled
+			{ text: 'Look at your strings. Straighten them. This is your comfort zone.', pauseAfter: 5 },
+			{ text: 'Decide your plan. Where are you serving? What is your next shot?', pauseAfter: 5 },
+			// Closing — fixed
+			{ text: 'Commit fully. No hesitation. Trust your training.', pauseAfter: 3, fixed: true },
+			{ text: 'You have practiced this hundreds of times.', pauseAfter: 3, fixed: true },
+			{ text: 'Step up. Play your game. One point at a time.', pauseAfter: 2, fixed: true },
 		]
 	};
 
@@ -108,17 +128,34 @@
 	let currentSteps = $derived(scripts[type] ?? scripts.daily);
 	let currentLabel = $derived(typeLabels[type] ?? 'Visualization');
 
-	// Calculate scaled pauses to fill the full duration
-	// Estimate ~3 seconds of speech per step at rate 0.65 (very slow)
-	// Average sentence length means ~4-6 seconds per step
+	// Calculate pauses to fill the full duration.
+	// Fixed steps (breathing, transitions) use their pauseAfter as-is.
+	// Scaled steps (visualization) share the remaining time proportionally by weight.
 	let scaledPauses = $derived.by(() => {
 		const steps = currentSteps;
 		const totalDurationSec = duration * 60;
-		// Estimate speech time: ~5 seconds per step at slow rate
-		const estimatedSpeechTime = steps.length * 5;
-		const availablePauseTime = Math.max(totalDurationSec - estimatedSpeechTime, steps.length * 3);
-		const totalWeight = steps.reduce((sum, s) => sum + s.pauseAfter, 0);
-		return steps.map(s => Math.round((s.pauseAfter / totalWeight) * availablePauseTime));
+		// Estimate speech time per step based on text length at rate 0.65
+		// ~6 chars/sec at normal rate, so at 0.65 rate ≈ 4 chars/sec
+		const estimatedSpeechTime = steps.reduce((sum, s) => sum + Math.max(s.text.length / 4, 2), 0);
+
+		// Sum of fixed pauses
+		const fixedPauseTime = steps
+			.filter(s => s.fixed)
+			.reduce((sum, s) => sum + s.pauseAfter, 0);
+
+		// Time available for scaled (visualization) pauses
+		const scaledSteps = steps.filter(s => !s.fixed);
+		const scaledWeight = scaledSteps.reduce((sum, s) => sum + s.pauseAfter, 0);
+		const availableForScaled = Math.max(
+			totalDurationSec - estimatedSpeechTime - fixedPauseTime,
+			scaledSteps.length * 5 // minimum 5s per visualization step
+		);
+
+		return steps.map(s => {
+			if (s.fixed) return s.pauseAfter;
+			if (scaledWeight === 0) return 5;
+			return Math.max(5, Math.round((s.pauseAfter / scaledWeight) * availableForScaled));
+		});
 	});
 	let timeDisplay = $derived(() => {
 		const remaining = Math.max(0, totalSeconds - elapsedSeconds);
@@ -160,11 +197,74 @@
 		});
 	}
 
+	function handleVisibilityChange(): void {
+		if (!hasStarted || isPaused) return;
+
+		if (document.hidden) {
+			// Page going hidden — speech will be killed by OS.
+			// Record the moment so we can calculate skipped time on return.
+			return;
+		}
+
+		// --- Page is becoming visible again ---
+
+		// Resume AudioContext if suspended (mobile browsers suspend it on screen lock)
+		if (audioCtx?.state === 'suspended') {
+			audioCtx.resume().catch(() => {});
+		}
+
+		const now = Date.now();
+
+		// Case 1: we were in a timed pause that should have ended while hidden
+		if (pauseExpectedEnd > 0 && now >= pauseExpectedEnd) {
+			if (breathTimer) { clearTimeout(breathTimer); breathTimer = null; }
+			pauseExpectedEnd = 0;
+			if (currentStepIndex < currentSteps.length - 1) {
+				currentStepIndex++;
+				restartSpeech();
+			} else {
+				elapsedSeconds = totalSeconds;
+				hasStarted = false;
+				stopAll();
+			}
+			return;
+		}
+
+		// Case 2: speech was playing but OS killed it silently (onend never fired)
+		// Check the browser's actual state vs our flag
+		const browserActuallySpeaking = window.speechSynthesis?.speaking ?? false;
+		if (isSpeaking && !browserActuallySpeaking) {
+			isSpeaking = false;
+			if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+			restartSpeech();
+			return;
+		}
+
+		// Case 3: onerror('interrupted') fired, isSpeaking is false, no pause running
+		if (!isSpeaking && pauseExpectedEnd === 0 && currentStepIndex < currentSteps.length) {
+			restartSpeech();
+		}
+	}
+
+	function restartSpeech(): void {
+		window.speechSynthesis.cancel();
+		setTimeout(() => {
+			if (!isPaused && hasStarted) speakCurrentStep();
+		}, 300);
+	}
+
 	$effect(() => {
 		if (autoOpen && !isOpen) open();
 		// Pre-load voice on mount
 		if (typeof window !== 'undefined' && window.speechSynthesis) {
 			loadVoice().then(v => { cachedVoice = v; });
+		}
+	});
+
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+			return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
 		}
 	});
 
@@ -186,6 +286,9 @@
 	async function startSession(): Promise<void> {
 		hasStarted = true;
 		isPaused = false;
+		sessionStartWall = Date.now();
+		totalPausedMs = 0;
+		enableScreenWake();
 		audioManager.register({ type: 'visualization', title: currentLabel, stop: () => close() });
 		startTimer();
 		startBinaural();
@@ -206,11 +309,13 @@
 
 	function togglePause(): void {
 		if (isPaused) {
+			totalPausedMs += Date.now() - pauseBeganAt;
 			isPaused = false;
 			startTimer();
 			if (binauralEnabled) startBinaural();
 			speakCurrentStep();
 		} else {
+			pauseBeganAt = Date.now();
 			isPaused = true;
 			stopTimer();
 			stopBinaural();
@@ -224,7 +329,10 @@
 	function startTimer(): void {
 		stopTimer();
 		timerInterval = setInterval(() => {
-			if (!isPaused) elapsedSeconds++;
+			if (!isPaused && sessionStartWall > 0) {
+				const wallElapsed = Date.now() - sessionStartWall - totalPausedMs;
+				elapsedSeconds = Math.min(Math.floor(wallElapsed / 1000), totalSeconds);
+			}
 		}, 1000);
 	}
 
@@ -235,8 +343,11 @@
 	function stopAll(): void {
 		stopTimer();
 		stopBinaural();
+		disableScreenWake();
 		if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
 		if (breathTimer) { clearTimeout(breathTimer); breathTimer = null; }
+		if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+		pauseExpectedEnd = 0;
 		hasStarted = false;
 		isSpeaking = false;
 	}
@@ -307,20 +418,55 @@
 		}
 
 		isSpeaking = true;
-		if (step.breathe) breathPhase = 'inhale';
+
+		// Sync breathing circle to actual speech start, not when speak() is called.
+		// On mobile, speechSynthesis.speak() has latency — audio starts 200-1000ms later.
+		// Using the 'start' event ensures the circle changes when the user hears it.
+		const targetBreathPhase = step.breathe ?? 'rest';
+		let breathPhaseSet = false;
+		const setBreathPhaseOnce = () => {
+			if (!breathPhaseSet) {
+				breathPhaseSet = true;
+				breathPhase = targetBreathPhase;
+			}
+		};
+		utterance.addEventListener('start', setBreathPhaseOnce);
+		// Fallback if 'start' event doesn't fire (not all browsers support it)
+		const breathFallbackId = setTimeout(setBreathPhaseOnce, 1000);
+
+		// Clear previous watchdog
+		if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 
 		utterance.onend = () => {
 			isSpeaking = false;
+			clearTimeout(breathFallbackId);
+			if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 			advanceAfterPause();
 		};
-		utterance.onerror = () => {
+		utterance.onerror = (e: any) => {
 			isSpeaking = false;
-			advanceAfterPause();
+			clearTimeout(breathFallbackId);
+			if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+			// 'interrupted' errors happen on mobile screen lock — visibility handler recovers
+			if (e?.error !== 'interrupted') {
+				advanceAfterPause();
+			}
 		};
 
 		window.speechSynthesis.speak(utterance);
 
-		// Chrome keep-alive
+		// Watchdog: if speech doesn't end within expected time, force advance
+		const maxSpeechMs = Math.max(step.text.length * 200, 5000) + 5000;
+		speechWatchdogId = setTimeout(() => {
+			speechWatchdogId = null;
+			if (isSpeaking && !isPaused && hasStarted) {
+				window.speechSynthesis.cancel();
+				isSpeaking = false;
+				advanceAfterPause();
+			}
+		}, maxSpeechMs);
+
+		// Chrome keep-alive: prevents Chrome from pausing speech after ~15s
 		const keepAlive = setInterval(() => {
 			if (!isSpeaking) { clearInterval(keepAlive); return; }
 			window.speechSynthesis.pause();
@@ -333,25 +479,21 @@
 		const step = currentSteps[currentStepIndex];
 		// Use scaled pause that's calculated to fill the full duration
 		const pauseMs = (scaledPauses[currentStepIndex] ?? 10) * 1000;
+		pauseExpectedEnd = Date.now() + pauseMs;
 
-		// Animate breath during pause
-		if (step?.breathe) {
-			breathPhase = 'inhale';
-			const inhaleDur = Math.min(pauseMs * 0.35, 5000);
-			const holdDur = Math.min(pauseMs * 0.15, 3000);
-			setTimeout(() => { if (!isPaused) breathPhase = 'hold'; }, inhaleDur);
-			setTimeout(() => { if (!isPaused) breathPhase = 'exhale'; }, inhaleDur + holdDur);
-			setTimeout(() => { if (!isPaused) breathPhase = 'rest'; }, pauseMs * 0.9);
-		}
+		// Breathing circle holds the current step's phase during the pause
+		// (already set in speakCurrentStep — no animation needed)
 
 		breathTimer = setTimeout(() => {
 			breathTimer = null;
+			pauseExpectedEnd = 0;
 			if (isPaused) return;
 			if (currentStepIndex < currentSteps.length - 1) {
 				currentStepIndex++;
 				speakCurrentStep();
 			} else {
-				// Session complete
+				// Session complete — sync timer to show 00:00
+				elapsedSeconds = totalSeconds;
 				hasStarted = false;
 				stopAll();
 			}

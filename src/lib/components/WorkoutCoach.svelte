@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { audioManager } from '$lib/stores/audio.svelte';
+	import { enableScreenWake, disableScreenWake } from '$lib/utils/screen-wake';
 
 	let {
 		exercises,
@@ -42,6 +43,21 @@
 			}
 		}
 	});
+
+	function handleVisibilityChange(): void {
+		if (phase === 'idle' || phase === 'done' || isPaused) return;
+		if (document.hidden) return;
+
+		// If speech was playing but OS killed it, cancel so the watchdog/promise
+		// can resolve cleanly and the workout loop advances
+		if (!cancelled) {
+			const browserActuallySpeaking = window.speechSynthesis?.speaking ?? false;
+			if (isSpeaking && !browserActuallySpeaking) {
+				window.speechSynthesis.cancel();
+			}
+		}
+	}
+
 	let progressPct = $derived(exercises.length > 0 ? (currentIndex / exercises.length) * 100 : 0);
 	let timeStr = $derived(() => {
 		const r = Math.max(0, totalDuration - elapsedTotal);
@@ -81,9 +97,32 @@
 				if (picked) { u.voice = picked; cachedVoice = picked; }
 			}
 			isSpeaking = true;
-			u.onend = () => { isSpeaking = false; resolve(); };
-			u.onerror = () => { isSpeaking = false; resolve(); };
+			let resolved = false;
+			const done = () => {
+				if (resolved) return;
+				resolved = true;
+				isSpeaking = false;
+				if (ka) clearInterval(ka);
+				if (watchdog) clearTimeout(watchdog);
+				resolve();
+			};
+			u.onend = done;
+			u.onerror = (e: any) => {
+				// 'interrupted' on mobile screen lock — resolve anyway to unblock the loop
+				done();
+			};
 			window.speechSynthesis.speak(u);
+
+			// Watchdog: if speech doesn't complete in time, force resolve
+			const maxMs = Math.max(text.length * 200, 3000) + 5000;
+			const watchdog = setTimeout(() => {
+				if (!resolved) {
+					window.speechSynthesis.cancel();
+					done();
+				}
+			}, maxMs);
+
+			// Chrome keep-alive
 			const ka = setInterval(() => {
 				if (!isSpeaking) { clearInterval(ka); return; }
 				window.speechSynthesis.pause();
@@ -126,6 +165,7 @@
 		elapsedTotal = 0;
 		isPaused = false;
 		phase = 'explain';
+		enableScreenWake();
 		audioManager.register({ type: 'workout', title, stop: stopWorkout });
 		// Warm up speech engine with silent utterance to ensure voice is ready
 		if (window.speechSynthesis) {
@@ -163,6 +203,7 @@
 		isPaused = false;
 		phase = 'idle';
 		isSpeaking = false;
+		disableScreenWake();
 		if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
 		if (totalTimerId) { clearInterval(totalTimerId); totalTimerId = null; }
 		if (countdownId) { clearInterval(countdownId); countdownId = null; }
@@ -271,7 +312,17 @@
 		await speak('Workout complete. Great job!', 0.85);
 	}
 
-	$effect(() => { return () => stopWorkout(); });
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+		}
+		return () => {
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('visibilitychange', handleVisibilityChange);
+			}
+			stopWorkout();
+		};
+	});
 </script>
 
 <div class="glass-card overflow-hidden">
