@@ -116,32 +116,19 @@
 		if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 		pauseExpectedEnd = 0;
 
-		const utterance = new SpeechSynthesisUtterance(text);
-		utterance.rate = speed;
-		utterance.volume = volume;
-		utterance.lang = 'en-US';
-
-		// Pick a good voice — cache on first use
-		if (!audioGuideVoice) {
-			const voices = window.speechSynthesis.getVoices();
-			audioGuideVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
-				?? voices.find(v => v.lang.startsWith('en') && !v.localService)
-				?? voices.find(v => v.lang.startsWith('en')) ?? null;
-		}
-		if (audioGuideVoice) utterance.voice = audioGuideVoice;
+		// Split into sentences to avoid Chrome's ~15s cutoff
+		const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+		if (sentences.length === 0) return;
 
 		isSpeaking = true;
+		let idx = 0;
 
-		function onSpeechDone(): void {
+		function onAllDone(): void {
 			isSpeaking = false;
-			if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
-			if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 			if (!isPlaying) return;
-
 			const next = new Set(completedSteps);
 			next.add(currentStep);
 			completedSteps = next;
-
 			if (currentStep < steps.length - 1) {
 				pauseExpectedEnd = Date.now() + pauseBetweenSteps * 1000;
 				pauseTimeoutId = setTimeout(() => {
@@ -157,36 +144,37 @@
 			}
 		}
 
-		utterance.onend = onSpeechDone;
-		utterance.onerror = (e: any) => {
-			isSpeaking = false;
-			if (keepAliveId !== null) { clearInterval(keepAliveId); keepAliveId = null; }
-			if (speechWatchdogId !== null) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
-			// 'interrupted' on mobile screen lock — visibility handler recovers
-			if (e?.error !== 'interrupted' && isPlaying) {
-				onSpeechDone();
+		function speakNext(): void {
+			if (!isPlaying || idx >= sentences.length) {
+				if (idx >= sentences.length) onAllDone();
+				return;
 			}
-		};
-
-		window.speechSynthesis.speak(utterance);
-
-		// Watchdog: if speech doesn't end within expected time, force advance
-		const maxSpeechMs = Math.max(text.length * 200, 5000) + 5000;
-		speechWatchdogId = setTimeout(() => {
-			speechWatchdogId = null;
-			if (isSpeaking && isPlaying) {
-				window.speechSynthesis.cancel();
-				isSpeaking = false;
-				onSpeechDone();
+			const s = sentences[idx];
+			const u = new SpeechSynthesisUtterance(s);
+			u.rate = speed;
+			u.volume = volume;
+			u.lang = 'en-US';
+			if (!audioGuideVoice) {
+				const voices = window.speechSynthesis.getVoices();
+				audioGuideVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
+					?? voices.find(v => v.lang.startsWith('en') && !v.localService)
+					?? voices.find(v => v.lang.startsWith('en')) ?? null;
 			}
-		}, maxSpeechMs);
+			if (audioGuideVoice) u.voice = audioGuideVoice;
 
-		// Chrome workaround: speech pauses after ~15s. Keep poking it.
-		keepAliveId = setInterval(() => {
-			if (!isSpeaking) { clearInterval(keepAliveId!); keepAliveId = null; return; }
-			window.speechSynthesis.pause();
-			window.speechSynthesis.resume();
-		}, 10000);
+			const wd = setTimeout(() => {
+				if (isSpeaking) { window.speechSynthesis.cancel(); idx++; idx < sentences.length ? setTimeout(speakNext, 200) : onAllDone(); }
+			}, Math.max(s.length * 500, 5000) + 8000);
+
+			u.onend = () => { clearTimeout(wd); idx++; idx < sentences.length ? setTimeout(speakNext, 250) : onAllDone(); };
+			u.onerror = (e: any) => {
+				clearTimeout(wd);
+				if (e?.error !== 'interrupted') { idx++; idx < sentences.length ? setTimeout(speakNext, 250) : onAllDone(); }
+			};
+			window.speechSynthesis.speak(u);
+		}
+
+		speakNext();
 	}
 
 	function play(): void {

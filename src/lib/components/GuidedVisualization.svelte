@@ -389,89 +389,109 @@
 	}
 
 	// --- Speech ---
+	// Splits text into sentences and speaks them one at a time.
+	// This avoids Chrome's ~15s speech cutoff AND the pause()/resume() keep-alive
+	// hack which was cutting off speech on mobile browsers.
 	function speakCurrentStep(): void {
 		if (isPaused || currentStepIndex >= currentSteps.length) return;
 		if (typeof window === 'undefined' || !window.speechSynthesis) {
-			// No speech — just advance on timing
 			advanceAfterPause();
 			return;
 		}
 
 		window.speechSynthesis.cancel();
-		const step = currentSteps[currentStepIndex];
-		const utterance = new SpeechSynthesisUtterance(step.text);
-		utterance.rate = 0.65; // Very slow, meditative pace
-		utterance.pitch = 0.85; // Lower, warmer tone
-		utterance.volume = 0.85;
-		utterance.lang = 'en-US';
+		if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
 
-		// Use cached voice (pre-loaded on mount/start)
-		if (cachedVoice) {
-			utterance.voice = cachedVoice;
-		} else {
-			// Fallback: try to pick one now
-			const voices = window.speechSynthesis.getVoices();
-			const v = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
-				?? voices.find(v => v.lang.startsWith('en') && !v.localService)
-				?? voices.find(v => v.lang.startsWith('en'));
-			if (v) { utterance.voice = v; cachedVoice = v; }
-		}
+		const step = currentSteps[currentStepIndex];
+		// Split into sentences — each is short enough to not hit browser limits
+		const sentences = step.text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+		if (sentences.length === 0) { advanceAfterPause(); return; }
 
 		isSpeaking = true;
 
-		// Sync breathing circle to actual speech start, not when speak() is called.
-		// On mobile, speechSynthesis.speak() has latency — audio starts 200-1000ms later.
-		// Using the 'start' event ensures the circle changes when the user hears it.
+		// Sync breathing circle to when the user actually hears the first word
 		const targetBreathPhase = step.breathe ?? 'rest';
 		let breathPhaseSet = false;
-		const setBreathPhaseOnce = () => {
+		let sentenceIdx = 0;
+
+		function speakNextSentence(): void {
+			if (isPaused || sentenceIdx >= sentences.length) {
+				if (sentenceIdx >= sentences.length) {
+					isSpeaking = false;
+					if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+					advanceAfterPause();
+				}
+				return;
+			}
+
+			const text = sentences[sentenceIdx];
+			const utterance = new SpeechSynthesisUtterance(text);
+			utterance.rate = 0.65;
+			utterance.pitch = 0.85;
+			utterance.volume = 0.85;
+			utterance.lang = 'en-US';
+			if (cachedVoice) {
+				utterance.voice = cachedVoice;
+			} else {
+				const voices = window.speechSynthesis.getVoices();
+				const v = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
+					?? voices.find(v => v.lang.startsWith('en') && !v.localService)
+					?? voices.find(v => v.lang.startsWith('en'));
+				if (v) { utterance.voice = v; cachedVoice = v; }
+			}
+
+			// Set breath phase on first sentence start
 			if (!breathPhaseSet) {
-				breathPhaseSet = true;
-				breathPhase = targetBreathPhase;
+				utterance.addEventListener('start', () => {
+					if (!breathPhaseSet) { breathPhaseSet = true; breathPhase = targetBreathPhase; }
+				});
+				setTimeout(() => {
+					if (!breathPhaseSet) { breathPhaseSet = true; breathPhase = targetBreathPhase; }
+				}, 1000);
 			}
-		};
-		utterance.addEventListener('start', setBreathPhaseOnce);
-		// Fallback if 'start' event doesn't fire (not all browsers support it)
-		const breathFallbackId = setTimeout(setBreathPhaseOnce, 1000);
 
-		// Clear previous watchdog
-		if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
+			// Per-sentence watchdog (generous: 500ms/char + 8s buffer)
+			const sentenceWatchdog = setTimeout(() => {
+				if (isSpeaking && !isPaused) {
+					window.speechSynthesis.cancel();
+					sentenceIdx++;
+					if (sentenceIdx < sentences.length) {
+						setTimeout(speakNextSentence, 200);
+					} else {
+						isSpeaking = false;
+						advanceAfterPause();
+					}
+				}
+			}, Math.max(text.length * 500, 5000) + 8000);
 
-		utterance.onend = () => {
-			isSpeaking = false;
-			clearTimeout(breathFallbackId);
-			if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
-			advanceAfterPause();
-		};
-		utterance.onerror = (e: any) => {
-			isSpeaking = false;
-			clearTimeout(breathFallbackId);
-			if (speechWatchdogId) { clearTimeout(speechWatchdogId); speechWatchdogId = null; }
-			// 'interrupted' errors happen on mobile screen lock — visibility handler recovers
-			if (e?.error !== 'interrupted') {
-				advanceAfterPause();
-			}
-		};
+			utterance.onend = () => {
+				clearTimeout(sentenceWatchdog);
+				sentenceIdx++;
+				if (sentenceIdx < sentences.length) {
+					setTimeout(speakNextSentence, 250);
+				} else {
+					isSpeaking = false;
+					advanceAfterPause();
+				}
+			};
 
-		window.speechSynthesis.speak(utterance);
+			utterance.onerror = (e: any) => {
+				clearTimeout(sentenceWatchdog);
+				if (e?.error !== 'interrupted') {
+					sentenceIdx++;
+					if (sentenceIdx < sentences.length) {
+						setTimeout(speakNextSentence, 250);
+					} else {
+						isSpeaking = false;
+						advanceAfterPause();
+					}
+				}
+			};
 
-		// Watchdog: if speech doesn't end within expected time, force advance
-		const maxSpeechMs = Math.max(step.text.length * 200, 5000) + 5000;
-		speechWatchdogId = setTimeout(() => {
-			speechWatchdogId = null;
-			if (isSpeaking && !isPaused && hasStarted) {
-				window.speechSynthesis.cancel();
-				isSpeaking = false;
-				advanceAfterPause();
-			}
-		}, maxSpeechMs);
+			window.speechSynthesis.speak(utterance);
+		}
 
-		// Chrome keep-alive: prevents Chrome from pausing speech after ~15s
-		const keepAlive = setInterval(() => {
-			if (!isSpeaking) { clearInterval(keepAlive); return; }
-			window.speechSynthesis.pause();
-			window.speechSynthesis.resume();
-		}, 10000);
+		speakNextSentence();
 	}
 
 	function advanceAfterPause(): void {

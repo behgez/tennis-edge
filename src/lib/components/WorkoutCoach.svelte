@@ -75,6 +75,8 @@
 	}
 
 	// --- Speech ---
+	// Speaks text as individual sentences to avoid Chrome's ~15s cutoff
+	// and the pause()/resume() keep-alive that was cutting off speech on mobile.
 	function speak(text: string, rate = 0.9): Promise<void> {
 		return new Promise(async (resolve) => {
 			if (cancelled) { resolve(); return; }
@@ -82,52 +84,49 @@
 			if (cancelled) { resolve(); return; }
 			if (typeof window === 'undefined' || !window.speechSynthesis) { resolve(); return; }
 			window.speechSynthesis.cancel();
-			const u = new SpeechSynthesisUtterance(text);
-			u.rate = rate;
-			u.pitch = 0.95;
-			u.volume = 0.9;
-			u.lang = 'en-US';
-			if (cachedVoice) {
-				u.voice = cachedVoice;
-			} else {
-				const voices = window.speechSynthesis.getVoices();
-				const picked = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
-					?? voices.find(v => v.lang.startsWith('en') && !v.localService)
-					?? voices.find(v => v.lang.startsWith('en'));
-				if (picked) { u.voice = picked; cachedVoice = picked; }
-			}
+
+			const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+			if (sentences.length === 0) { resolve(); return; }
+
 			isSpeaking = true;
-			let resolved = false;
-			const done = () => {
-				if (resolved) return;
-				resolved = true;
+			let idx = 0;
+			let done = false;
+
+			function finish(): void {
+				if (done) return;
+				done = true;
 				isSpeaking = false;
-				if (ka) clearInterval(ka);
-				if (watchdog) clearTimeout(watchdog);
 				resolve();
-			};
-			u.onend = done;
-			u.onerror = (e: any) => {
-				// 'interrupted' on mobile screen lock — resolve anyway to unblock the loop
-				done();
-			};
-			window.speechSynthesis.speak(u);
+			}
 
-			// Watchdog: if speech doesn't complete in time, force resolve
-			const maxMs = Math.max(text.length * 200, 3000) + 5000;
-			const watchdog = setTimeout(() => {
-				if (!resolved) {
-					window.speechSynthesis.cancel();
-					done();
+			function speakNext(): void {
+				if (cancelled || idx >= sentences.length) { finish(); return; }
+				const s = sentences[idx];
+				const u = new SpeechSynthesisUtterance(s);
+				u.rate = rate;
+				u.pitch = 0.95;
+				u.volume = 0.9;
+				u.lang = 'en-US';
+				if (cachedVoice) {
+					u.voice = cachedVoice;
+				} else {
+					const voices = window.speechSynthesis.getVoices();
+					const picked = voices.find(v => v.lang.startsWith('en') && v.name.includes('Samantha'))
+						?? voices.find(v => v.lang.startsWith('en') && !v.localService)
+						?? voices.find(v => v.lang.startsWith('en'));
+					if (picked) { u.voice = picked; cachedVoice = picked; }
 				}
-			}, maxMs);
 
-			// Chrome keep-alive
-			const ka = setInterval(() => {
-				if (!isSpeaking) { clearInterval(ka); return; }
-				window.speechSynthesis.pause();
-				window.speechSynthesis.resume();
-			}, 10000);
+				const wd = setTimeout(() => {
+					if (!done) { window.speechSynthesis.cancel(); idx++; idx < sentences.length ? setTimeout(speakNext, 200) : finish(); }
+				}, Math.max(s.length * 500, 3000) + 8000);
+
+				u.onend = () => { clearTimeout(wd); idx++; idx < sentences.length ? setTimeout(speakNext, 150) : finish(); };
+				u.onerror = () => { clearTimeout(wd); idx++; idx < sentences.length ? setTimeout(speakNext, 150) : finish(); };
+				window.speechSynthesis.speak(u);
+			}
+
+			speakNext();
 		});
 	}
 
